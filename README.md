@@ -48,8 +48,6 @@ Heart rate simulation logic is supported by validated open datasets, including t
 ---
 
 ## 📦 How to Run
-
-### 1. Install Dependencies
 ```bash
 pip install numpy matplotlib pygame pylsl
 Start Muse Stream
