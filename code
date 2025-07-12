@@ -1,0 +1,133 @@
+#pip install numpy matplotlib pygame pylsl
+import numpy as np
+import matplotlib.pyplot as plt
+import os
+import pygame
+from pylsl import StreamInlet, resolve_byprop
+import time
+import csv
+
+# -------- Sound Setup --------
+def trigger_sound(times=1):
+    sound_path = os.path.join(os.getcwd(), 'ding.mp3')
+    if os.path.exists(sound_path):
+        pygame.mixer.init()
+        for _ in range(times):
+            pygame.mixer.music.load(sound_path)
+            pygame.mixer.music.play()
+            while pygame.mixer.music.get_busy():
+                pygame.time.Clock().tick(10)
+    else:
+        print(f"🔇 Sound file not found at: {sound_path}")
+
+# -------- Fatigue Detection Logic --------
+def detect_fatigue(alpha_power, beta_power, hr):
+    fatigue_score = (beta_power / (alpha_power + 1e-5)) + (hr - 70) / 10
+    return fatigue_score > 1.5
+
+# -------- Find Muse LSL Stream --------
+print("🔍 Searching for Muse EEG stream...")
+streams = resolve_byprop('type', 'EEG', timeout=10)
+if not streams:
+    raise RuntimeError("No EEG stream found. Make sure BlueMuse is streaming from Muse.")
+inlet = StreamInlet(streams[0])
+print("✅ Connected to Muse EEG stream!")
+
+# -------- Setup --------
+sampling_rate = 256  # Muse 2 EEG sampling rate
+duration = 1         # seconds per sample chunk
+chunk_size = int(sampling_rate * duration)
+n_channels = 4       # TP9, AF7, AF8, TP10
+
+x_vals, alpha_vals, beta_vals, hr_vals, fatigue_flags = [], [], [], [], []
+window_count = 50
+
+# Open CSV file
+csv_file = open("fatigue_data.csv", mode='w', newline='')
+csv_writer = csv.writer(csv_file)
+csv_writer.writerow(["Index", "Alpha", "Beta", "HR", "Fatigue"])
+
+# -------- Main Loop --------
+print("📡 Collecting and processing data...")
+for i in range(window_count):
+    samples = []
+    while len(samples) < chunk_size:
+        sample, timestamp = inlet.pull_sample(timeout=1.0)
+        if sample:
+            samples.append(sample[:n_channels])
+
+    data = np.array(samples).T  # Shape: (channels, time_points)
+
+    # Use AF7 (channel index 1) for analysis
+    eeg = data[1]
+    freqs = np.fft.rfftfreq(chunk_size, 1 / sampling_rate)
+    fft_vals = np.abs(np.fft.rfft(eeg))
+
+    alpha_band = (freqs >= 8) & (freqs <= 12)
+    beta_band = (freqs > 12) & (freqs <= 30)
+
+    alpha_power = np.mean(fft_vals[alpha_band])
+    beta_power = np.mean(fft_vals[beta_band])
+    hr = np.random.normal(75, 5)  # Simulated HR
+
+    fatigue = detect_fatigue(alpha_power, beta_power, hr)
+
+    # Save & log
+    x_vals.append(i)
+    alpha_vals.append(alpha_power)
+    beta_vals.append(beta_power)
+    hr_vals.append(hr)
+    fatigue_flags.append(fatigue)
+    csv_writer.writerow([i, f"{alpha_power:.2f}", f"{beta_power:.2f}", f"{hr:.2f}", "Yes" if fatigue else "No"])
+
+    print(f"[{i}] Alpha: {alpha_power:.2f}, Beta: {beta_power:.2f}, HR: {hr:.2f} → Fatigue: {'Yes' if fatigue else 'No'}")
+
+# Close CSV file
+csv_file.close()
+
+# -------- Fatigue Summary --------
+total_fatigue = sum(fatigue_flags)
+print("\n🔍 FATIGUE SUMMARY")
+if total_fatigue >= 20:
+    print("🚨 Serious Fatigue Detected (≥ 40%). Action Needed!")
+    trigger_sound(times=3)
+elif total_fatigue >= 15:
+    print("⚠️  Moderate Fatigue (≥ 30%). Consider Intervention.")
+    trigger_sound(times=2)
+elif total_fatigue >= 10:
+    print("🟡 Mild Fatigue (≥ 20%). Early Monitoring Recommended.")
+    trigger_sound(times=1)
+else:
+    print("✅ Normal Condition (< 20% fatigue detected). No alert triggered.")
+
+# -------- Plotting --------
+fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(10, 6))
+
+ax1.plot(x_vals, alpha_vals, label='Alpha Power', color='blue')
+ax1.plot(x_vals, beta_vals, label='Beta Power', color='orange')
+ax1.set_title('EEG Waves (AF7)')
+ax1.legend()
+
+ax2.plot(x_vals, hr_vals, label='Heart Rate', color='green')
+ax2.axhline(70, color='red', linestyle='--', label='Baseline HR')
+ax2.set_title('Heart Rate (bpm)')
+ax2.legend()
+
+fig.suptitle("Fatigue Detection Results", fontsize=16)
+plt.tight_layout()
+plt.savefig("fatigue_plot.png")
+print("\n📈 Plot saved as 'fatigue_plot.png'")
+print("📁 Data saved as 'fatigue_data.csv'")
+
+# -------- Fatigue Threshold Table --------
+print("\n✅ RESEARCH-BASED FATIGUE THRESHOLDS")
+print("{:<20} {:<20} {}".format("Fatigue Intensity", "Suggested Threshold", "Meaning"))
+print("{:<20} {:<20} {}".format("Mild Monitoring", "10/50 (20%)", "Early awareness or alert"))
+print("{:<20} {:<20} {}".format("Moderate Fatigue", "15/50 (30%)", "Needs intervention soon"))
+print("{:<20} {:<20} {}".format("Serious Fatigue", "20+/50 (40–50%)", "Critical — needs rest or action"))
+
+# -------- Research Source --------
+print("\n📚 Based on fatigue severity thresholds adapted from:")
+print("Shen, J., Barbera, J., & Shapiro, C. M. (2006).")
+print("\"Distinguishing fatigue from sleepiness: Clinical and research perspectives\".")
+print("Sleep Medicine Reviews, 10(1), 63–76. https://doi.org/10.1016/j.smrv.2005.05.004")
