@@ -52,3 +52,31 @@ Heart rate simulation logic is supported by validated open datasets, including t
 ### 1. Install Dependencies
 ```bash
 pip install numpy matplotlib pygame pylsl
+Start Muse Stream
+
+Turn on your Muse 2 headset.
+
+Open BlueMuse, and connect your Muse device.
+
+Click "Start Stream" to stream EEG data via LSL (Lab Streaming Layer).
+
+Add Sound File
+
+Place a file named ding.mp3 in your project root directory.
+
+This will be played when cognitive fatigue thresholds are crossed.
+
+Run the Script
+Execute the main fatigue detection script:
+
+bash
+Copy
+Edit
+python fatigue_monitor.py
+View Results
+
+After running, check your terminal for real-time fatigue assessments.
+
+A file called fatigue_plot.png will be saved showing EEG and heart rate data trends.
+
+A CSV file fatigue_data.csv will be saved with raw data for further analysis.
